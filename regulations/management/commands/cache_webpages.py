@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from BeautifulSoup import BeautifulSoup
-import urllib2
+import requests
 from urlparse import urlparse
 import threading
 import sys
@@ -15,31 +15,35 @@ class Command(BaseCommand):
 
         try:
             without_anchor = args[0].split("#")[0]
-            temp = urllib2.urlopen(without_anchor)
-            temp.read()
-            temp.close()
-            print "Cached: " + without_anchor
+            req = requests.get(without_anchor)
+
+            status_txt = "Cached"
+            if req.status_code != 200:
+                status_txt =  "Failed"
+
+            msg =  "{0} (status {1}): {2}".format(status_txt, str(req.status_code)  , req.url)
+            obj.stdout.write(msg)
         except Exception, errtxt:
-            print "    Failed: " + without_anchor
-            print "    " + str(errtxt)
+            obj.stderr.write("    Failed: " + args[0])
+            obj.stderr.write( "    " + str(errtxt))
 
 
     def get_main_reg_list(self):
         try:
             regulations_links = []
-            html = urllib2.urlopen( self.full_url ).read()
+            html = requests.get( self.full_url ).text
             soup = BeautifulSoup(html)
             reg_list = soup.find( "ul", { "class" : "reg-list" } )
 
             for link in reg_list.findAll("li"):
                 regulations_links.append(link.find("a")["href"])
 
-            print "Got List of Regulations "
+
             return regulations_links
 
         except Exception, errtxt:
-            print "main page failed to load"
-            print "    " + str(errtxt)
+            self.stderr.write( "main page failed to load")
+            self.stderr.write( "    " + str(errtxt))
 
 
     #figure out the partial path depending on root location of eregs
@@ -63,14 +67,13 @@ class Command(BaseCommand):
         self.base_url = url.scheme + "://" + url.netloc
         self.full_url = sys.argv[2]
 
-        print self.base_url
-        print self.full_url
+        self.stdout.write("Base Url:"+ self.base_url)
+        self.stdout.write("eRegs location:"+ self.full_url)
+
         self.regulations = None
 
         if len(sys.argv) > 3:
             self.regulations = sys.argv[3]
-
-
 
         try:
             if not self.regulations:
@@ -79,9 +82,9 @@ class Command(BaseCommand):
                 regulations_links = self.regulations.split(",")
 
             for link in regulations_links:
-                print "Getting NAV links from " + self.base_url + link
+                self.stdout.write("Getting NAV links from " + self.base_url + link)
 
-                reg_nav = urllib2.urlopen(self.base_url+link)
+                reg_nav = requests.get(self.base_url+link).text
                 soup = BeautifulSoup(reg_nav)
                 reg_soup = soup.findAll("a")
 
@@ -96,8 +99,8 @@ class Command(BaseCommand):
                         if thread_count <= 5:
                             threading.Thread(target=self.access_url, args=(partial, ) ).start()
                         else:
-                            print "Currently Processing " + str(thread_count) + " Urls"
-                            print "Waiting..."
+                            self.stdout.write("Currently Processing " + str(thread_count) + " Urls")
+                            self.stdout.write("Waiting...")
                             time.sleep(thread_count * 2)
 
                 #let the threads catch up before doing the next batch
@@ -105,7 +108,7 @@ class Command(BaseCommand):
                     time.sleep(len(threading.enumerate()) * 2)
 
         except Exception, errtxt:
-            print "    " + str(errtxt)
+            self.stderr.write("    " + str(errtxt))
 
 
 
